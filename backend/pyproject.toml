@@ -1,0 +1,91 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fixroute-backend"
+version = "0.1.0"
+description = "FixRoute Platform backend - AI-powered maintenance triage"
+requires-python = ">=3.12"
+dependencies = [
+  "Django>=5.0,<6.0",
+  "djangorestframework>=3.14",
+  "django-filter>=23.0",
+  "django-guardian>=2.4",
+  "drf-spectacular>=0.27",
+  "psycopg[binary]>=3.1",
+  "pgvector>=0.2.4",
+  "celery>=5.3",
+  "redis>=5.0",
+  "langchain>=0.1",
+  "langchain-openai>=0.0.5",
+  "structlog>=24.1",
+  "azure-storage-blob>=12.19",
+  "azure-communication-sms>=1.1",
+  "pyjwt[crypto]>=2.8",
+  "cryptography>=42.0",
+  "opensearch-py>=2.4",
+  "prometheus-client>=0.20",
+  "opentelemetry-api>=1.24",
+  "opentelemetry-sdk>=1.24",
+  "opentelemetry-instrumentation-django>=0.45b0",
+  "opentelemetry-instrumentation-celery>=0.45b0",
+  "opentelemetry-instrumentation-psycopg>=0.45b0",
+  "pillow>=10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-django>=4.8",
+  "pytest-cov>=4.1",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.4",
+  "mypy>=1.10",
+  "drf-spectacular[validation]>=0.27",
+  "types-requests",
+  "freezegun>=1.4",
+  "responses>=0.25",
+  "factory-boy>=3.3",
+]
+prod = [
+  "gunicorn>=22.0",
+  "uvicorn[standard]>=0.27",
+  "whitenoise>=6.6",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".venv", "migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["mypy_django_plugin.main"]
+ignore_missing_imports = true
+
+[tool.django-stubs]
+django_settings_module = "config.settings.base"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["test_*.py", "*_test.py"]
+addopts = "-ra --strict-markers --strict-config"
+testpaths = ["tests", "backend/apps"]
+filterwarnings = [
+  "ignore::DeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["backend/apps", "backend/ai", "backend/common"]
+omit = ["*/tests/*", "*/migrations/*", "*/__init__.py"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80
+exclude_lines = ["pragma: no cover", "raise NotImplementedError", "if TYPE_CHECKING:"]

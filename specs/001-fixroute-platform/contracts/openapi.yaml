@@ -1,0 +1,705 @@
+openapi: 3.0.3
+info:
+  title: FixRoute API
+  version: 0.1.0
+  description: |
+    AI-powered maintenance triage API. Versioned via URL prefix (/api/v1/).
+    All endpoints require OIDC/OAuth2 authentication and enforce tenant isolation.
+
+servers:
+  - url: https://api.fixroute.example.com/api/v1
+    description: Production
+  - url: http://localhost:8000/api/v1
+    description: Local development
+
+components:
+  securitySchemes:
+    OIDC:
+      type: openIdConnect
+      openIdConnectUrl: https://login.microsoftonline.com/{tenant}/v2.0/.well-known/openid-configuration
+
+  parameters:
+    TenantId:
+      name: X-Tenant-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Tenant identifier injected from auth context.
+
+  schemas:
+    WorkOrder:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        property_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [submitted, classified, troubleshooting, dispatched, in_progress, completed]
+        priority:
+          type: string
+          enum: [emergency, urgent, routine, low]
+        category:
+          type: string
+          nullable: true
+        media_attachments:
+          type: array
+          items:
+            type: object
+            properties:
+              blob_url:
+                type: string
+                description: Azure Blob Storage URL
+              sas_token_expires_at:
+                type: string
+                format: date-time
+                description: Short-lived SAS token expiry
+              container:
+                type: string
+              tier:
+                type: string
+                enum: [hot, cool, archive]
+              type:
+                type: string
+              filename:
+                type: string
+        voice_transcript:
+          type: string
+          nullable: true
+        soft_deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+        hard_delete_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    WorkOrderCreate:
+      type: object
+      required: [property_id, title, description]
+      properties:
+        property_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+        media:
+          type: array
+          items:
+            type: string
+            format: binary
+          description: Photo attachments (max 5, 10MB each)
+        voice_recording:
+          type: string
+          format: binary
+          description: Optional voice recording (WAV/MP3, max 30MB)
+
+    WorkOrderList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkOrder'
+        pagination:
+          type: object
+          properties:
+            cursor:
+              type: string
+            has_more:
+              type: boolean
+
+    TriageResult:
+      type: object
+      properties:
+        work_order_id:
+          type: string
+          format: uuid
+        category:
+          type: string
+        urgency:
+          type: string
+        confidence:
+          type: number
+          format: float
+        troubleshooting_steps:
+          type: array
+          items:
+            type: object
+            properties:
+              step:
+                type: integer
+              description:
+                type: string
+        ai_model_version:
+          type: string
+
+    Vendor:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        trades:
+          type: array
+          items:
+            type: string
+        coverage_areas:
+          type: array
+          items:
+            type: string
+        rating:
+          type: number
+          format: float
+        contact_email:
+          type: string
+        contact_phone:
+          type: string
+
+    VendorMatch:
+      type: object
+      properties:
+        vendor:
+          $ref: '#/components/schemas/Vendor'
+        distance_km:
+          type: number
+        estimated_cost:
+          type: number
+          nullable: true
+
+    Dispatch:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        work_order_id:
+          type: string
+          format: uuid
+        vendor_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, assigned, accepted, en_route, on_site, completed, cancelled]
+        estimated_cost:
+          type: number
+          nullable: true
+        final_cost:
+          type: number
+          nullable: true
+        estimated_arrival_at:
+          type: string
+          format: date-time
+          nullable: true
+        actual_arrival_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    CostEstimate:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        line_items:
+          type: array
+          items:
+            type: object
+            properties:
+              description:
+                type: string
+              amount:
+                type: number
+              type:
+                type: string
+        total:
+          type: number
+        status:
+          type: string
+          enum: [pending, approved, rejected, revised]
+
+    SpendAnalytics:
+      type: object
+      properties:
+        period:
+          type: object
+          properties:
+            start:
+              type: string
+              format: date
+            end:
+              type: string
+              format: date
+        by_property:
+          type: array
+          items:
+            type: object
+            properties:
+              property_id:
+                type: string
+                format: uuid
+              total_spend:
+                type: number
+              work_order_count:
+                type: integer
+        by_trade:
+          type: array
+          items:
+            type: object
+            properties:
+              trade:
+                type: string
+              total_spend:
+                type: number
+              work_order_count:
+                type: integer
+        by_vendor:
+          type: array
+          items:
+            type: object
+            properties:
+              vendor_id:
+                type: string
+                format: uuid
+              total_spend:
+                type: number
+              work_order_count:
+                type: integer
+
+    Error:
+      type: object
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+
+paths:
+  /work-orders:
+    post:
+      summary: Submit a new maintenance request
+      operationId: submitWorkOrder
+      tags: [Work Orders]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/WorkOrderCreate'
+      responses:
+        '201':
+          description: Work order created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkOrder'
+        '400':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      summary: List work orders (paginated)
+      operationId: listWorkOrders
+      tags: [Work Orders]
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: priority
+          in: query
+          schema:
+            type: string
+        - name: property_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Paginated work order list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkOrderList'
+
+  /work-orders/{id}:
+    get:
+      summary: Get work order details
+      operationId: getWorkOrder
+      tags: [Work Orders]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Work order details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkOrder'
+        '404':
+          description: Not found
+
+  /work-orders/{id}/triage:
+    get:
+      summary: Get triage result for a work order
+      operationId: getTriageResult
+      tags: [Triage]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Triage result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TriageResult'
+
+  /vendors:
+    get:
+      summary: List available vendors
+      operationId: listVendors
+      tags: [Vendors]
+      parameters:
+        - name: trade
+          in: query
+          schema:
+            type: string
+        - name: latitude
+          in: query
+          schema:
+            type: number
+        - name: longitude
+          in: query
+          schema:
+            type: number
+      responses:
+        '200':
+          description: Vendor list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Vendor'
+
+  /work-orders/{id}/match-vendors:
+    get:
+      summary: Get ranked vendor matches for a work order
+      operationId: matchVendors
+      tags: [Dispatch]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Ranked vendor matches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VendorMatch'
+
+  /work-orders/{id}/dispatch:
+    post:
+      summary: Dispatch a vendor to a work order
+      operationId: createDispatch
+      tags: [Dispatch]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [vendor_id]
+              properties:
+                vendor_id:
+                  type: string
+                  format: uuid
+      responses:
+        '201':
+          description: Dispatch created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dispatch'
+
+  /dispatches/{id}/estimate:
+    post:
+      summary: Submit a cost estimate for a dispatch
+      operationId: submitEstimate
+      tags: [Dispatch]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [line_items, total]
+              properties:
+                line_items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      description:
+                        type: string
+                      amount:
+                        type: number
+                total:
+                  type: number
+      responses:
+        '201':
+          description: Estimate submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostEstimate'
+
+  /estimates/{id}/approve:
+    post:
+      summary: Approve or reject a cost estimate
+      operationId: reviewEstimate
+      tags: [Dispatch]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [approve, reject, request_revision]
+                comment:
+                  type: string
+      responses:
+        '200':
+          description: Estimate review recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostEstimate'
+
+  /dispatches/{id}/status:
+    patch:
+      summary: Update dispatch status (vendor-facing)
+      operationId: updateDispatchStatus
+      tags: [Dispatch]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [accepted, en_route, on_site, completed]
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dispatch'
+
+  /analytics/spend:
+    get:
+      summary: Get spend analytics
+      operationId: getSpendAnalytics
+      tags: [Analytics]
+      parameters:
+        - name: start_date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: group_by
+          in: query
+          schema:
+            type: string
+            enum: [property, trade, vendor]
+      responses:
+        '200':
+          description: Spend analytics data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpendAnalytics'
+
+  /erasure-requests:
+    post:
+      summary: Submit a GDPR/CCPA right-to-erasure request
+      operationId: submitErasureRequest
+      tags: [Compliance]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject_id, reason]
+              properties:
+                subject_id:
+                  type: string
+                  format: uuid
+                reason:
+                  type: string
+                  enum: [gdpr_art_17, ccpa_1798_105, account_closure]
+      responses:
+        '202':
+          description: Erasure request accepted; soft-delete scheduled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_id:
+                    type: string
+                    format: uuid
+                  soft_deleted_at:
+                    type: string
+                    format: date-time
+                  hard_delete_at:
+                    type: string
+                    format: date-time
+                  sla_days:
+                    type: integer
+                    example: 30
+
+  /health:
+    get:
+      summary: Service health and active-region indicator
+      operationId: getHealth
+      tags: [Operations]
+      responses:
+        '200':
+          description: Health check response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded, unhealthy]
+                  region:
+                    type: string
+                    enum: [primary, secondary]
+                  components:
+                    type: object
+                    additionalProperties:
+                      type: string
+
+  /work-orders/{id}/duplicates:
+    get:
+      summary: Find work orders similar to the given one (pgvector cosine similarity)
+      operationId: findDuplicates
+      tags: [Intake]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: threshold
+          in: query
+          schema:
+            type: number
+            default: 0.85
+            minimum: 0
+            maximum: 1
+        - name: lookback_days
+          in: query
+          schema:
+            type: integer
+            default: 14
+      responses:
+        '200':
+          description: List of similar work orders
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  matches:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        work_order_id:
+                          type: string
+                          format: uuid
+                        similarity_score:
+                          type: number
+                        match_type:
+                          type: string
+                          enum: [text, image, combined]
